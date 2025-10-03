@@ -55,13 +55,6 @@ wpdev start
 # Open the site
 open https://demo.test   # or http://demo.test if tls.enabled: false
 
-# 4) (Optional) Pull production into local
-# .wpdev.yml must have ssh.production.host/user/wp_path (and url recommended)
-wpdev init production
-# - rsyncs files from production WP path → ./wp
-# - imports DB via WP-CLI
-# - runs search-replace from prod URL → https://demo.test
-
 # Common tasks
 wpdev db dump                   # writes .wpdev/db/dump-YYYYMMDD-HHMMSS.sql
 wpdev db import ./dump.sql
