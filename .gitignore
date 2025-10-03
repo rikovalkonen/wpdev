@@ -1,0 +1,5 @@
+/wpdev
+/vendor
+node_modules
+/.wpdev/generated
+/docker-compose.yml
