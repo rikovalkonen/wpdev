@@ -17,7 +17,7 @@ Minimal MVP of a Lando-like tool targeted for PHP/WordPress development.
 # 2) Build the CLI
 cd wpdev
 go mod tidy
-go build -o wpdev ./cmd/wpdev
+go build -o wpdev
 ```
 
 ## Install
@@ -87,3 +87,11 @@ This extension adds a Caddy reverse proxy that serves HTTPS for:
 - `https://<domain>` → WordPress (Nginx)
 - `https://mail.<domain>` → Mailpit
 - `https://db.<domain>` → Adminer
+
+## Add to wp-config for ssl support
+```bash
+if (isset($_SERVER['HTTP_X_FORWARDED_PROTO']) && $_SERVER['HTTP_X_FORWARDED_PROTO'] === 'https') {
+    $_SERVER['HTTPS'] = 'on';
+    $_SERVER['SERVER_PORT'] = 443;
+}
+```

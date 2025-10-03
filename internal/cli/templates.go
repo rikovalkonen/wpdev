@@ -20,6 +20,15 @@ func renderTemplates(cfg *Config) error {
 	_ = os.MkdirAll(filepath.Join(".wpdev", "generated"), 0o755)
 	if err := os.WriteFile(filepath.Join(".wpdev", "generated", "nginx.conf"), out.Bytes(), 0o644); err != nil { return err }
 
+	// PHP Dockerfile
+    content, err = os.ReadFile(filepath.Join(tplDir, "php.Dockerfile.tmpl"))
+    if err != nil { return err }
+    phpTpl, err := template.New("dockerfile").Parse(string(content))
+    if err != nil { return err }
+    out.Reset()
+    if err := phpTpl.Execute(&out, cfg); err != nil { return err }
+    if err := os.WriteFile(filepath.Join(".wpdev", "generated", "php.Dockerfile"), out.Bytes(), 0o644); err != nil { return err }
+
 	// docker-compose
 	content, err = os.ReadFile(filepath.Join(tplDir, "docker-compose.tmpl.yml"))
 	if err != nil { return err }

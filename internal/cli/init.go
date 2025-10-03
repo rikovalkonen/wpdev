@@ -150,7 +150,7 @@ services:
   php:
     build:
       context: .
-      dockerfile: .wpdev/templates/php.Dockerfile.tmpl
+      dockerfile: .wpdev/generated/php.Dockerfile
       args:
         PHP_VERSION: {{ .Web.PHP }}
     volumes:
@@ -322,7 +322,11 @@ https://{{$domain}} {
   encode gzip
   log
   tls /certs/{{$domain}}.pem /certs/{{$domain}}-key.pem
-  reverse_proxy {{$up}}
+  reverse_proxy {{$up}} {
+    header_up X-Forwarded-Proto https
+    header_up X-Forwarded-Host {host}
+    header_up X-Real-IP {remote_host}
+  }
 }
 http://{{$domain}} {
   redir https://{{$domain}}{uri} 308
