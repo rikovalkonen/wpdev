@@ -37,6 +37,18 @@ go build -o wpdev ./cmd/wpdev
 ./wpdev stop
 ```
 
+## Install
+```bash
+# 1) Make executable
+chmod +x ./wpdev
+
+# 2) Copy to bin
+sudo mv ./wpdev /usr/local/bin
+
+# 3) If Gatekeeper complains (macOS only)
+xattr -d com.apple.quarantine /usr/local/bin/wpdev
+
+```
 ## Notes
 - This MVP exposes services on localhost ports for simplicity (no Traefik/mkcert yet).
 - File sync uses Docker bind mounts; for macOS/Windows performance, consider Mutagen integration in a later iteration.
