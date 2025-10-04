@@ -226,13 +226,23 @@ volumes:
 {{- end }}
 `
 
-const nginxConfTemplate = `server {
+const nginxConfTemplate = `
+map $http_x_forwarded_proto $fastcgi_https {
+  default off;
+  https   on;
+}
+
+server {
   listen 80;
   server_name _;
   root /var/www/html/{{ .Web.Docroot }};
   index index.php index.html;
 
   client_max_body_size 64m;
+
+  set $forwarded_proto $http_x_forwarded_proto;
+  if ($forwarded_proto = "") { set $forwarded_proto $scheme; }
+
 
   location / {
     try_files $uri $uri/ /index.php?$args;
@@ -242,6 +252,8 @@ const nginxConfTemplate = `server {
     include fastcgi_params;
     fastcgi_pass php:9000;
     fastcgi_param SCRIPT_FILENAME $document_root$fastcgi_script_name;
+    fastcgi_param HTTPS       $fastcgi_https;
+    fastcgi_param SERVER_PORT $fastcgi_server_port;
     fastcgi_buffers 16 16k;
     fastcgi_index index.php;
   }
@@ -299,11 +311,17 @@ RUN set -eux; \
       echo 'RemoteIPTrustedProxy 127.0.0.0/8'; \
     } > /etc/apache2/conf-available/remoteip.conf; \
     a2enconf remoteip; \
-    echo "ServerName localhost" >> /etc/apache2/apache2.conf
-
+    echo "ServerName localhost" >> /etc/apache2/apache2.conf; \
+    \
+    { \
+      echo 'SetEnvIf X-Forwarded-Proto "^https$" HTTPS=on'; \
+      echo 'SetEnvIf X-Forwarded-Proto "^https$" SERVER_PORT=443'; \
+      echo 'SetEnvIf X-Forwarded-Port  "^443$"   SERVER_PORT=443'; \
+    } > /etc/apache2/conf-available/https-from-proxy.conf; \
+    a2enconf https-from-proxy; \
+    \
 # Optionally set docroot to {{ .Web.Docroot }}
 {{- if and (ne .Web.Docroot ".") (ne .Web.Docroot "") }}
-RUN set -eux; \
     sed -ri 's#DocumentRoot /var/www/html#DocumentRoot /var/www/html/{{ .Web.Docroot }}#' /etc/apache2/sites-available/000-default.conf; \
     printf '<Directory /var/www/html/{{ .Web.Docroot }}>\nAllowOverride All\nRequire all granted\n</Directory>\n' \
       > /etc/apache2/conf-available/docroot.conf; \
