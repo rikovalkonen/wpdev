@@ -74,6 +74,21 @@ docker compose exec caddy caddy validate --config /etc/caddy/Caddyfile
 
 ```
 
+## Install Dnsmasq
+```bash 
+# 1) Install dnsmasq
+brew install dnsmasq
+
+# 2) Create config directory for dnsmasq
+mkdir -pv $(brew --prefix)/etc/
+
+# 3) Setup domain configurations
+echo 'address=/.test/127.0.0.1' >> $(brew --prefix)/etc/dnsmasq.conf
+
+# 4) Restart dnsmasq
+sudo brew services start dnsmasq
+```
+
 ## HTTPS with Caddy + mkcert
 
 This extension adds a Caddy reverse proxy that serves HTTPS for:
