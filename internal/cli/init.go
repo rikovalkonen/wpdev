@@ -232,6 +232,11 @@ map $http_x_forwarded_proto $fastcgi_https {
   https   on;
 }
 
+map $http_x_forwarded_proto $fastcgi_server_port {
+  	default 80;
+  	https   443;
+}
+    
 server {
   listen 80;
   server_name _;
