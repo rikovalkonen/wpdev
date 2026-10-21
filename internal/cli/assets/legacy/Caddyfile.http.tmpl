@@ -1,0 +1,25 @@
+
+{{ $domain := .Domain }}
+{{ $up := "php:80" }}{{ if ne .Web.Server "apache" }}{{ $up = "web:80" }}{{ end }}
+
+http://{{$domain}} {
+  encode gzip
+  log
+  reverse_proxy {{$up}}
+}
+
+{{ if .Services.Mailpit }}
+http://mail.{{$domain}} {
+  encode gzip
+  log
+  reverse_proxy mailpit:8025
+}
+{{ end }}
+
+{{ if .Services.Adminer }}
+http://db.{{$domain}} {
+  encode gzip
+  log
+  reverse_proxy adminer:8080
+}
+{{ end }}

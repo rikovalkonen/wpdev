@@ -1,0 +1,6 @@
+#!/bin/sh
+set -eu
+if [ -f /usr/local/share/ca-certificates/wpdev-rootCA.crt ]; then
+    update-ca-certificates
+fi
+exec docker-php-entrypoint "$@"

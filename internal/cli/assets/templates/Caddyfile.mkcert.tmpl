@@ -1,0 +1,10 @@
+{{range .Routes}}
+https://{{.Host}} {
+  encode gzip
+  tls /certs/{{.Certificate}}.pem /certs/{{.Certificate}}-key.pem
+  reverse_proxy {{.Upstream}}
+}
+http://{{.Host}} {
+  redir https://{host}{uri} 308
+}
+{{end}}

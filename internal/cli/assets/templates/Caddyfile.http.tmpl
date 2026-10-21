@@ -1,0 +1,6 @@
+{{range .Routes}}
+http://{{.Host}} {
+  encode gzip
+  reverse_proxy {{.Upstream}}
+}
+{{end}}

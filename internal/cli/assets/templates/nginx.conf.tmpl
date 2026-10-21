@@ -1,0 +1,45 @@
+map $http_x_forwarded_proto $fastcgi_https {
+  default off;
+  https on;
+}
+map $http_x_forwarded_proto $fastcgi_server_port {
+  default 80;
+  https 443;
+}
+server {
+  listen 80;
+  server_name _;
+  root {{.ContainerDocroot}};
+  index index.php index.html;
+  client_max_body_size 64m;
+  absolute_redirect off;
+{{if .Multisite.Enabled}}
+  # Relative redirects retain the scheme terminated at Caddy.
+  rewrite ^({{.Multisite.BasePath}}(?:[_0-9a-zA-Z-]+/)?wp-admin)$ $1/ permanent;
+{{if eq .Multisite.Mode "subdirectory"}}
+  if (!-e $request_filename) {
+    rewrite ^{{.Multisite.BasePath}}[_0-9a-zA-Z-]+/(wp-(?:content|admin|includes)/.*)$ /$1 last;
+    rewrite ^{{.Multisite.BasePath}}[_0-9a-zA-Z-]+/(.*\.php)$ /$1 last;
+  }
+{{end}}
+{{if ne .Multisite.BasePath "/"}}
+  # The network URL base is independent of the physical document root.
+  rewrite ^{{.Multisite.BasePath}}(.*)$ /$1 last;
+{{end}}
+{{end}}
+  location ~ /\.(?!well-known/) {
+    deny all;
+  }
+  location / {
+    try_files $uri $uri/ /index.php?$args;
+  }
+  location ~ \.php$ {
+    try_files $uri =404;
+    include fastcgi_params;
+    fastcgi_pass php:9000;
+    fastcgi_param SCRIPT_FILENAME $document_root$fastcgi_script_name;
+    fastcgi_param HTTPS $fastcgi_https;
+    fastcgi_param SERVER_PORT $fastcgi_server_port;
+    fastcgi_buffers 16 16k;
+  }
+}

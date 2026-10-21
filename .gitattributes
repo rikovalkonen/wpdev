@@ -1,0 +1,2 @@
+# Preserve legacy templates byte-for-byte for hash-based upgrade detection.
+internal/cli/assets/legacy/* -whitespace

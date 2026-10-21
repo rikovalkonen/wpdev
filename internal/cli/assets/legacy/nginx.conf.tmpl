@@ -1,0 +1,37 @@
+
+map $http_x_forwarded_proto $fastcgi_https {
+  default off;
+  https   on;
+}
+
+map $http_x_forwarded_proto $fastcgi_server_port {
+  	default 80;
+  	https   443;
+}
+    
+server {
+  listen 80;
+  server_name _;
+  root /var/www/html/{{ .Web.Docroot }};
+  index index.php index.html;
+
+  client_max_body_size 64m;
+
+  set $forwarded_proto $http_x_forwarded_proto;
+  if ($forwarded_proto = "") { set $forwarded_proto $scheme; }
+
+
+  location / {
+    try_files $uri $uri/ /index.php?$args;
+  }
+
+  location ~ \\.php$ {
+    include fastcgi_params;
+    fastcgi_pass php:9000;
+    fastcgi_param SCRIPT_FILENAME $document_root$fastcgi_script_name;
+    fastcgi_param HTTPS       $fastcgi_https;
+    fastcgi_param SERVER_PORT $fastcgi_server_port;
+    fastcgi_buffers 16 16k;
+    fastcgi_index index.php;
+  }
+}

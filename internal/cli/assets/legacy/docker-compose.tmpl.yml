@@ -1,0 +1,79 @@
+
+services:
+  php:
+    build:
+      context: .
+      dockerfile: .wpdev/generated/php.Dockerfile
+      args:
+        PHP_VERSION: {{ .Web.PHP }}
+    volumes:
+      - ./:/var/www/html:delegated
+    environment:
+      - XDEBUG_MODE={{ if .Xdebug.Enabled }}debug,develop{{ else }}off{{ end }}
+      - PHP_IDE_CONFIG=serverName=wpdev
+    depends_on:
+      - db
+{{- if ne .Web.Server "apache" }}
+
+  web:
+    image: nginx:stable
+    volumes:
+      - ./:/var/www/html:delegated
+      - ./.wpdev/generated/nginx.conf:/etc/nginx/conf.d/default.conf
+    depends_on:
+      - php
+{{- end }}
+
+  db:
+    image: {{ if eq .Database.Engine "mysql" }}mysql:{{ .Database.Version }}{{ else }}mariadb:{{ .Database.Version }}{{ end }}
+    environment:
+      - {{ if eq .Database.Engine "mysql" }}MYSQL_DATABASE{{ else }}MARIADB_DATABASE{{ end }}=wordpress
+      - {{ if eq .Database.Engine "mysql" }}MYSQL_USER{{ else }}MARIADB_USER{{ end }}=wp
+      - {{ if eq .Database.Engine "mysql" }}MYSQL_PASSWORD{{ else }}MARIADB_PASSWORD{{ end }}=secret
+      - {{ if eq .Database.Engine "mysql" }}MYSQL_ROOT_PASSWORD{{ else }}MARIADB_ROOT_PASSWORD{{ end }}=root
+    volumes:
+{{- if eq .Database.Persist "bind" }}
+      - ./{{ .Database.DataPath }}:/var/lib/mysql
+{{- else }}
+      - dbdata:/var/lib/mysql
+{{- end }}
+    ports:
+      - "{{ .Database.Portforward }}:3306"
+
+{{- if .Services.Mailpit }}
+  mailpit:
+    image: axllent/mailpit
+{{- end }}
+
+{{- if .Services.Adminer }}
+  adminer:
+    image: adminer:latest
+    depends_on:
+      - db
+{{- end }}
+
+  caddy:
+    image: caddy:2
+    depends_on:
+{{- if eq .Web.Server "apache" }}
+      - php
+{{- else }}
+      - web
+{{- end }}
+{{- if .Services.Mailpit }}
+      - mailpit
+{{- end }}
+{{- if .Services.Adminer }}
+      - adminer
+{{- end }}
+    ports:
+      - "80:80"
+      - "443:443"
+    volumes:
+      - ./.wpdev/generated/Caddyfile:/etc/caddy/Caddyfile:ro
+      - ./.wpdev/certs:/certs:ro
+
+{{- if ne .Database.Persist "bind" }}
+volumes:
+  dbdata: {}
+{{- end }}

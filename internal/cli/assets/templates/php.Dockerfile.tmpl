@@ -1,0 +1,40 @@
+ARG PHP_VERSION
+FROM php:${PHP_VERSION}-{{if eq .Web.Server "apache"}}apache{{else}}fpm{{end}}
+
+RUN set -eux; \
+    apt-get update; \
+    apt-get install -y --no-install-recommends ca-certificates curl ghostscript \
+      libavif-dev libfreetype6-dev libicu-dev libjpeg-dev libpng-dev libwebp-dev \
+      libzip-dev libmagickwand-dev mariadb-client git unzip; \
+    rm -rf /var/lib/apt/lists/*; \
+    docker-php-ext-configure gd --with-avif --with-freetype --with-jpeg --with-webp; \
+    docker-php-ext-install -j"$(nproc)" bcmath exif gd intl mysqli soap zip; \
+    pecl install imagick-3.8.1 xdebug-3.5.3 redis-6.3.0; \
+    docker-php-ext-enable imagick redis; \
+    if php -r 'exit(PHP_VERSION_ID < 80500 ? 0 : 1);'; then docker-php-ext-enable opcache; fi; \
+    php -r 'if (!extension_loaded("Zend OPcache")) { exit(1); }'; \
+    docker-php-ext-enable xdebug; \
+    curl -fsSL https://github.com/wp-cli/wp-cli/releases/download/v2.12.0/wp-cli-2.12.0.phar -o /usr/local/bin/wp; \
+    chmod +x /usr/local/bin/wp; \
+    wp --allow-root --info
+
+RUN set -eux; \
+    printf 'opcache.memory_consumption=128\nopcache.interned_strings_buffer=8\nopcache.max_accelerated_files=8000\nopcache.revalidate_freq=0\n' > /usr/local/etc/php/conf.d/wpdev-opcache.ini; \
+    printf 'error_reporting=E_ALL\ndisplay_errors=Off\nlog_errors=On\nerror_log=/dev/stderr\nmemory_limit=512M\nupload_max_filesize=64M\npost_max_size=64M\n' > /usr/local/etc/php/conf.d/wpdev.ini; \
+    printf 'curl.cainfo=/etc/ssl/certs/ca-certificates.crt\nopenssl.cafile=/etc/ssl/certs/ca-certificates.crt\n' > /usr/local/etc/php/conf.d/wpdev-ca.ini; \
+    printf 'xdebug.mode=off\nxdebug.start_with_request=trigger\nxdebug.client_host=host.docker.internal\nxdebug.client_port=9003\n' > /usr/local/etc/php/conf.d/wpdev-xdebug.ini
+
+{{if eq .Web.Server "apache"}}
+RUN set -eux; \
+    a2enmod rewrite expires remoteip; \
+    printf 'ServerName localhost\nRemoteIPHeader X-Forwarded-For\nRemoteIPTrustedProxy 10.0.0.0/8\nRemoteIPTrustedProxy 172.16.0.0/12\nRemoteIPTrustedProxy 192.168.0.0/16\nSetEnvIf X-Forwarded-Proto "^https$" HTTPS=on\nSetEnvIf X-Forwarded-Proto "^https$" SERVER_PORT=443\n' > /etc/apache2/conf-available/wpdev.conf; \
+    printf '<VirtualHost *:80>\nServerName {{if .TLS.Enabled}}https{{else}}http{{end}}://{{.Domain}}:{{if .TLS.Enabled}}443{{else}}80{{end}}\nUseCanonicalName Off\nUseCanonicalPhysicalPort Off\nDocumentRoot {{.ContainerDocroot}}\nErrorLog /proc/self/fd/2\nCustomLog /proc/self/fd/1 combined\n</VirtualHost>\n' > /etc/apache2/sites-available/000-default.conf; \
+    printf '<Directory {{.ContainerDocroot}}>\nAllowOverride All\nRequire all granted\n</Directory>\n' >> /etc/apache2/conf-available/wpdev.conf; \
+    printf '<DirectoryMatch /\\.(?!well-known)>\nRequire all denied\n</DirectoryMatch>\n<FilesMatch ^\\.>\nRequire all denied\n</FilesMatch>\n' >> /etc/apache2/conf-available/wpdev.conf; \
+    a2enconf wpdev
+{{end}}
+COPY .wpdev/generated/entrypoint.sh /usr/local/bin/wpdev-entrypoint
+RUN chmod +x /usr/local/bin/wpdev-entrypoint
+ENTRYPOINT ["wpdev-entrypoint"]
+CMD [{{if eq .Web.Server "apache"}}"apache2-foreground"{{else}}"php-fpm"{{end}}]
+WORKDIR /var/www/html

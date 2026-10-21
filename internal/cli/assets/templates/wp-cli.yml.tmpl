@@ -1,0 +1,7 @@
+# Global container defaults; project wp-cli.yml settings still take precedence.
+{{if eq .Web.Server "apache"}}
+apache_modules:
+  - mod_rewrite
+{{else}}
+{}
+{{end}}

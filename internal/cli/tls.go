@@ -1,112 +1,198 @@
 package cli
 
 import (
+	"bytes"
+	"crypto/tls"
+	"crypto/x509"
+	"encoding/pem"
 	"fmt"
 	"os"
-	"os/exec"
 	"path/filepath"
+	"strings"
+	"time"
 
 	"github.com/spf13/cobra"
 )
 
-var tlsCmd = &cobra.Command{
-	Use:   "tls",
-	Short: "TLS utilities (mkcert)",
-}
+var tlsCmd = &cobra.Command{Use: "tls", Short: "Manage mkcert certificates and local CA trust"}
 
-var tlsInitCmd = &cobra.Command{
-	Use:   "init",
-	Short: "Generate local TLS certs with mkcert for your domain",
-	RunE: func(cmd *cobra.Command, args []string) error {
-		cfg, err := loadConfig(".wpdev.yml")
+func init() {
+	tlsCmd.AddCommand(&cobra.Command{Use: "init", Short: "Install the local CA and ensure valid project certificates", RunE: func(cmd *cobra.Command, args []string) error {
+		c, err := projectConfig()
 		if err != nil {
 			return err
 		}
-		if !cfg.TLS.Enabled {
-			fmt.Println("tls.init skipped: tls.enabled is false in .wpdev.yml")
+		if !c.TLS.Enabled {
+			fmt.Fprintln(cmd.OutOrStdout(), "TLS is disabled.")
 			return nil
 		}
-		if cfg.Domain == "" || cfg.Domain == "localhost" {
-			return fmt.Errorf("set a valid domain in .wpdev.yml (e.g., myshop.test)")
-		}
-
-		// Skip if already present (idempotent)
-		if certsPresent(cfg.Domain) {
-			fmt.Println("TLS certs already exist; skipping generation.")
-			return nil
-		}
-
-		// Do the work
-		if err := generateCertsForDomain(cfg.Domain); err != nil {
+		if err = ensureTLS(c, true); err != nil {
 			return err
 		}
-		fmt.Println("TLS init complete. Now run: wpdev start")
+		fmt.Fprintln(cmd.OutOrStdout(), "TLS ready. Run wpdev start to apply certificate changes to containers.")
 		return nil
-	},
+	}})
 }
-
-func init() {
-	tlsCmd.AddCommand(tlsInitCmd)
-	rootCmd.AddCommand(tlsCmd)
+func certificate(b []byte) (*x509.Certificate, error) {
+	block, _ := pem.Decode(b)
+	if block == nil {
+		return nil, fmt.Errorf("invalid PEM certificate")
+	}
+	return x509.ParseCertificate(block.Bytes)
 }
-
-// ----- Helpers (same package; callable from init.go) -----
-
-func generateCertsForDomain(domain string) error {
-	// Ensure mkcert is installed
-	if _, err := exec.LookPath("mkcert"); err != nil {
-		return fmt.Errorf("mkcert not found. Install it first (brew install mkcert, choco install mkcert, etc.)")
+func checkCertificate(certPEM, keyPEM, caPEM []byte, names []string, now time.Time) error {
+	pair, err := tls.X509KeyPair(certPEM, keyPEM)
+	if err != nil {
+		return fmt.Errorf("certificate/key pair: %w", err)
 	}
-
-	certDir := filepath.Join(".wpdev", "certs")
-	if err := os.MkdirAll(certDir, 0o755); err != nil {
-	 return err
-	}
-
-	// Install local CA (idempotent)
-	c := exec.Command("mkcert", "-install")
-	c.Stdout, c.Stderr = os.Stdout, os.Stderr
-	if err := c.Run(); err != nil {
+	leaf, err := x509.ParseCertificate(pair.Certificate[0])
+	if err != nil {
 		return err
 	}
-
-	// Generate leaf certs for domain and wildcard
-	wild := "*." + domain
-
-	certPath := filepath.Join(certDir, domain+".pem")
-	keyPath := filepath.Join(certDir, domain+"-key.pem")
-	wcCertPath := filepath.Join(certDir, "_wildcard."+domain+".pem")
-	wcKeyPath := filepath.Join(certDir, "_wildcard."+domain+"-key.pem")
-
-	fmt.Println("Generating certs for", domain, "and", wild)
-
-	cmd1 := exec.Command("mkcert", "-cert-file", certPath, "-key-file", keyPath, domain)
-	cmd1.Stdout, cmd1.Stderr = os.Stdout, os.Stderr
-	if err := cmd1.Run(); err != nil {
+	ca, err := certificate(caPEM)
+	if err != nil {
 		return err
 	}
-
-	cmd2 := exec.Command("mkcert", "-cert-file", wcCertPath, "-key-file", wcKeyPath, wild)
-	cmd2.Stdout, cmd2.Stderr = os.Stdout, os.Stderr
-	if err := cmd2.Run(); err != nil {
+	if !ca.IsCA {
+		return fmt.Errorf("root certificate is not a CA")
+	}
+	roots := x509.NewCertPool()
+	roots.AddCert(ca)
+	if _, err = leaf.Verify(x509.VerifyOptions{Roots: roots, CurrentTime: now}); err != nil {
 		return err
 	}
-
-	fmt.Println("Wrote:", certPath, keyPath, wcCertPath, wcKeyPath)
-	return nil
-}
-
-func certsPresent(domain string) bool {
-	need := []string{
-		filepath.Join(".wpdev", "certs", domain+".pem"),
-		filepath.Join(".wpdev", "certs", domain+"-key.pem"),
-		filepath.Join(".wpdev", "certs", "_wildcard."+domain+".pem"),
-		filepath.Join(".wpdev", "certs", "_wildcard."+domain+"-key.pem"),
+	if leaf.NotAfter.Before(now.Add(30 * 24 * time.Hour)) {
+		return fmt.Errorf("certificate expires in less than 30 days")
 	}
-	for _, p := range need {
-		if _, err := os.Stat(p); os.IsNotExist(err) {
-			return false
+	for _, name := range names {
+		if strings.HasPrefix(name, "*.") {
+			found := false
+			for _, san := range leaf.DNSNames {
+				if san == name {
+					found = true
+				}
+			}
+			if !found {
+				return fmt.Errorf("certificate is missing %s", name)
+			}
+		} else if err = leaf.VerifyHostname(name); err != nil {
+			return err
 		}
 	}
-	return true
+	return nil
+}
+func verifyTLSFiles(c *Config, root []byte) error {
+	for _, item := range []struct{ stem, host string }{{c.Domain, c.Domain}, {"_wildcard." + c.Domain, "*." + c.Domain}} {
+		cert, err := os.ReadFile(c.file(".wpdev", "certs", item.stem+".pem"))
+		if err != nil {
+			return err
+		}
+		key, err := os.ReadFile(c.file(".wpdev", "certs", item.stem+"-key.pem"))
+		if err != nil {
+			return err
+		}
+		if err = checkCertificate(cert, key, root, []string{item.host}, time.Now()); err != nil {
+			return fmt.Errorf("%s: %w", item.stem, err)
+		}
+	}
+	return nil
+}
+func tlsFingerprint(c *Config) error {
+	if !c.TLS.Enabled {
+		c.TLSFingerprint = ""
+		return nil
+	}
+	b := []byte{}
+	for _, name := range []string{"rootCA.pem", c.Domain + ".pem", c.Domain + "-key.pem", "_wildcard." + c.Domain + ".pem", "_wildcard." + c.Domain + "-key.pem"} {
+		part, err := os.ReadFile(c.file(".wpdev", "certs", name))
+		if err != nil {
+			return err
+		}
+		b = append(b, part...)
+	}
+	c.TLSFingerprint = hash(b)
+	return nil
+}
+func ensureTLS(c *Config, install bool) error {
+	if !c.TLS.Enabled {
+		return nil
+	}
+	var out bytes.Buffer
+	if err := process(c.Root, nil, &out, "mkcert", "-CAROOT"); err != nil {
+		return fmt.Errorf("mkcert is required when tls.enabled is true: %w", err)
+	}
+	caroot := strings.TrimSpace(out.String())
+	if !filepath.IsAbs(caroot) {
+		return fmt.Errorf("mkcert -CAROOT did not return an absolute path")
+	}
+	rootPath := filepath.Join(caroot, "rootCA.pem")
+	if _, err := os.Stat(rootPath); os.IsNotExist(err) {
+		install = true
+	} else if err != nil {
+		return err
+	}
+	if install {
+		if err := process(c.Root, nil, os.Stdout, "mkcert", "-install"); err != nil {
+			return err
+		}
+	}
+	root, err := os.ReadFile(rootPath)
+	if err != nil {
+		return err
+	}
+	ca, err := certificate(root)
+	if err != nil {
+		return err
+	}
+	if !ca.IsCA || time.Now().Before(ca.NotBefore) || !time.Now().Before(ca.NotAfter) {
+		return fmt.Errorf("mkcert CA is invalid or expired")
+	}
+	dir := c.file(".wpdev", "certs")
+	if err = os.MkdirAll(dir, 0o700); err != nil {
+		return err
+	}
+	if err = verifyTLSFiles(c, root); err != nil {
+		fmt.Println("Generating mkcert certificates:", err)
+		stage, e := os.MkdirTemp(dir, ".renew-*")
+		if e != nil {
+			return e
+		}
+		defer os.RemoveAll(stage)
+		for _, item := range []struct{ stem, host string }{{c.Domain, c.Domain}, {"_wildcard." + c.Domain, "*." + c.Domain}} {
+			cp, kp := filepath.Join(stage, item.stem+".pem"), filepath.Join(stage, item.stem+"-key.pem")
+			if e = process(c.Root, nil, os.Stdout, "mkcert", "-cert-file", cp, "-key-file", kp, item.host); e != nil {
+				return e
+			}
+			cert, e := os.ReadFile(cp)
+			if e != nil {
+				return e
+			}
+			key, e := os.ReadFile(kp)
+			if e != nil {
+				return e
+			}
+			if e = checkCertificate(cert, key, root, []string{item.host}, time.Now()); e != nil {
+				return e
+			}
+		}
+		for _, stem := range []string{c.Domain, "_wildcard." + c.Domain} {
+			for _, suffix := range []string{".pem", "-key.pem"} {
+				b, e := os.ReadFile(filepath.Join(stage, stem+suffix))
+				if e != nil {
+					return e
+				}
+				mode := os.FileMode(0o644)
+				if suffix == "-key.pem" {
+					mode = 0o600
+				}
+				if e = atomicWrite(filepath.Join(dir, stem+suffix), b, mode); e != nil {
+					return e
+				}
+			}
+		}
+	}
+	if err = atomicWrite(filepath.Join(dir, "rootCA.pem"), root, 0o644); err != nil {
+		return err
+	}
+	return tlsFingerprint(c)
 }

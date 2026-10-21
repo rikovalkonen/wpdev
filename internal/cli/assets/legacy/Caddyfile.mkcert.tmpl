@@ -1,0 +1,41 @@
+
+{{ $domain := .Domain }}
+{{ $up := "php:80" }}{{ if ne .Web.Server "apache" }}{{ $up = "web:80" }}{{ end }}
+
+https://{{$domain}} {
+  encode gzip
+  log
+  tls /certs/{{$domain}}.pem /certs/{{$domain}}-key.pem
+  reverse_proxy {{$up}} {
+    header_up X-Forwarded-Proto https
+    header_up X-Forwarded-Host {host}
+    header_up X-Real-IP {remote_host}
+  }
+}
+http://{{$domain}} {
+  redir https://{{$domain}}{uri} 308
+}
+
+{{ if .Services.Mailpit }}
+https://mail.{{$domain}} {
+  encode gzip
+  log
+  tls /certs/_wildcard.{{$domain}}.pem /certs/_wildcard.{{$domain}}-key.pem
+  reverse_proxy mailpit:8025
+}
+http://mail.{{$domain}} {
+  redir https://mail.{{$domain}}{uri} 308
+}
+{{ end }}
+
+{{ if .Services.Adminer }}
+https://db.{{$domain}} {
+  encode gzip
+  log
+  tls /certs/_wildcard.{{$domain}}.pem /certs/_wildcard.{{$domain}}-key.pem
+  reverse_proxy adminer:8080
+}
+http://db.{{$domain}} {
+  redir https://db.{{$domain}}{uri} 308
+}
+{{ end }}
