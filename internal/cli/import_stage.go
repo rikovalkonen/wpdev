@@ -39,7 +39,7 @@ func (s *importStage) close() {
 	}
 	os.RemoveAll(s.dir)
 }
-func newImportStage(c *Config, config []byte) (*importStage, error) {
+func newImportStage(c *Config, config []byte, sourceRoot ...string) (*importStage, error) {
 	dir, err := os.MkdirTemp("", "wpdev-import-")
 	if err != nil {
 		return nil, err
@@ -77,6 +77,12 @@ func newImportStage(c *Config, config []byte) (*importStage, error) {
 	if c.Database.Engine == "mysql" {
 		enginePrefix, ping = "MYSQL", "mysqladmin"
 	}
+	project := bind(c.Root, "/var/www/html")
+	if len(sourceRoot) > 0 && sourceRoot[0] != "" {
+		// Full pulls validate against the downloaded core, even in an empty
+		// project. Do not create mount points in the active project directory.
+		project = bind(sourceRoot[0], c.containerDocroot())
+	}
 	model := map[string]any{
 		"services": map[string]any{
 			"db": map[string]any{
@@ -89,7 +95,7 @@ func newImportStage(c *Config, config []byte) (*importStage, error) {
 				"image": image, "build": map[string]any{"context": dir, "args": map[string]string{"PHP_VERSION": c.Web.PHP}},
 				"command":     []string{"sleep", "infinity"},
 				"environment": map[string]string{"WPDEV_LOCAL": "1", "XDEBUG_MODE": "off", "WP_CLI_CACHE_DIR": "/tmp/wp-cli-cache", "WP_CLI_CONFIG_PATH": "/dev/null"},
-				"volumes": []any{bind(c.Root, "/var/www/html"), bind(filepath.Join(dir, "wp-config.php"), c.containerDocroot()+"/wp-config.php"),
+				"volumes": []any{project, bind(filepath.Join(dir, "wp-config.php"), c.containerDocroot()+"/wp-config.php"),
 					bind(filepath.Join(dir, "content"), c.containerDocroot()+"/wp-content"), bind(dir, "/wpdev-import")},
 				"depends_on": map[string]any{"db": map[string]string{"condition": "service_healthy"}},
 			},

@@ -29,8 +29,10 @@ func localizeDatabase(cmd *cobra.Command, c *Config, file string, opts importOpt
 	if opts.Mode != "" && opts.Mode != "subdomain" && opts.Mode != "subdirectory" {
 		return fmt.Errorf("invalid --multisite-mode")
 	}
-	if err := requireWordPress(c); err != nil {
-		return err
+	if opts.Files == nil {
+		if err := requireWordPress(c); err != nil {
+			return err
+		}
 	}
 	if file != "" {
 		info, e := os.Stat(file)
@@ -42,6 +44,17 @@ func localizeDatabase(cmd *cobra.Command, c *Config, file string, opts importOpt
 		}
 	}
 	source, mode, err := configSource(c)
+	originalConfig := append([]byte(nil), source...)
+	configMissing := os.IsNotExist(err)
+	stageRoot := ""
+	if opts.Files != nil {
+		stageRoot = opts.Files.dir
+		opts.Files.newConfig = configMissing
+		if configMissing {
+			source, err = os.ReadFile(filepath.Join(stageRoot, "wp-config.php"))
+			mode = 0o644
+		}
+	}
 	if err != nil {
 		return err
 	}
@@ -53,7 +66,7 @@ func localizeDatabase(cmd *cobra.Command, c *Config, file string, opts importOpt
 	if err != nil {
 		return err
 	}
-	stage, err := newImportStage(c, []byte(transformed.Source))
+	stage, err := newImportStage(c, []byte(transformed.Source), stageRoot)
 	if err != nil {
 		return err
 	}
@@ -84,6 +97,7 @@ func localizeDatabase(cmd *cobra.Command, c *Config, file string, opts importOpt
 	if err != nil {
 		return err
 	}
+	plan.Files = opts.Files
 	media, err := stage.sourceMedia(source, meta)
 	if err != nil {
 		return err
@@ -112,7 +126,11 @@ func localizeDatabase(cmd *cobra.Command, c *Config, file string, opts importOpt
 		return err
 	}
 	if !opts.Yes {
-		fmt.Fprint(cmd.OutOrStdout(), "Replace the local database and update local configuration? [y/N] ")
+		if opts.Files != nil {
+			fmt.Fprint(cmd.OutOrStdout(), "Replace the local database, apply the listed file changes and update local configuration? [y/N] ")
+		} else {
+			fmt.Fprint(cmd.OutOrStdout(), "Replace the local database and update local configuration? [y/N] ")
+		}
 		answer, err := bufio.NewReader(cmd.InOrStdin()).ReadString('\n')
 		if err != nil && err != io.EOF {
 			return err
@@ -124,20 +142,27 @@ func localizeDatabase(cmd *cobra.Command, c *Config, file string, opts importOpt
 	}
 	// Staging can take time; do not overwrite edits made while it was running.
 	current, _, err := configSource(c)
-	if err != nil {
+	if configMissing != os.IsNotExist(err) {
+		return fmt.Errorf("wp-config.php appeared or disappeared during import; rerun with the new settings")
+	}
+	if err != nil && !(configMissing && os.IsNotExist(err)) {
 		return err
 	}
 	currentYAML, err := os.ReadFile(c.ConfigPath)
 	if err != nil {
 		return err
 	}
-	if !bytes.Equal(current, source) || !bytes.Equal(currentYAML, originalYAML) {
+	if !bytes.Equal(current, originalConfig) || !bytes.Equal(currentYAML, originalYAML) {
 		return fmt.Errorf("configuration changed during import; rerun with the new settings")
 	}
 	if err = publishImport(c, plan, normalized, localConfig, mode); err != nil {
 		return err
 	}
-	fmt.Fprintln(cmd.OutOrStdout(), "Database localized successfully:", plan.Config.URL())
+	if opts.Files != nil {
+		fmt.Fprintln(cmd.OutOrStdout(), "WordPress files and database imported successfully:", plan.Config.URL())
+	} else {
+		fmt.Fprintln(cmd.OutOrStdout(), "Database localized successfully:", plan.Config.URL())
+	}
 	if err = applyPlugins(c, pluginApplyOptions{}, cmd.OutOrStdout()); err != nil {
 		return &postImportPluginError{err}
 	}
@@ -263,7 +288,14 @@ func publishImport(c *Config, p *importPlan, dump string, config []byte, mode os
 		return fmt.Errorf("cannot acquire import lock %s; another import may be running (remove a stale lock only after checking): %w", lock, err)
 	}
 	defer os.Remove(lock)
-	snapshot, err := snapshotImport(c)
+	var filePaths []string
+	if p.Files != nil {
+		if err = p.Files.check(c); err != nil {
+			return err
+		}
+		filePaths = p.Files.snapshotPaths(c)
+	}
+	snapshot, err := snapshotManaged(c, "import", filePaths...)
 	if err != nil {
 		return err
 	}
@@ -372,6 +404,11 @@ func publishImport(c *Config, p *importPlan, dump string, config []byte, mode os
 	dbChanged = true
 	if err = replaceLocalDB(target, dump); err != nil {
 		return err
+	}
+	if p.Files != nil {
+		if err = p.Files.publish(target); err != nil {
+			return err
+		}
 	}
 	if err = atomicWrite(target.file(target.Web.Docroot, "wp-config.php"), config, mode); err != nil {
 		return err

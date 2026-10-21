@@ -14,6 +14,7 @@ import (
 type importOptions struct {
 	DryRun, Yes       bool
 	Map, Prefix, Mode string
+	Files             *pullFiles
 }
 type importSite struct {
 	ID      int    `json:"id"`
@@ -42,6 +43,7 @@ type importPlan struct {
 	Config       Config
 	Replacements []urlReplacement
 	Media        mediaMap
+	Files        *pullFiles
 }
 
 var sqlIdentifier = regexp.MustCompile(`^[a-zA-Z0-9_]+$`)

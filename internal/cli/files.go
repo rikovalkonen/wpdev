@@ -2,10 +2,37 @@ package cli
 
 import (
 	"fmt"
+	"io"
 	"os"
 	"path/filepath"
 	"time"
 )
+
+func atomicCopy(source, dest string, mode os.FileMode) error {
+	in, err := os.Open(source)
+	if err != nil {
+		return err
+	}
+	defer in.Close()
+	if err = os.MkdirAll(filepath.Dir(dest), 0o755); err != nil {
+		return err
+	}
+	out, err := os.CreateTemp(filepath.Dir(dest), ".wpdev-copy-*")
+	if err != nil {
+		return err
+	}
+	defer os.Remove(out.Name())
+	if err = out.Chmod(mode); err == nil {
+		_, err = io.Copy(out, in)
+	}
+	if closeErr := out.Close(); err == nil {
+		err = closeErr
+	}
+	if err != nil {
+		return err
+	}
+	return os.Rename(out.Name(), dest)
+}
 
 func atomicWrite(path string, b []byte, mode os.FileMode) error {
 	if err := os.MkdirAll(filepath.Dir(path), 0o755); err != nil {

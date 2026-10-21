@@ -34,6 +34,7 @@ type Config struct {
 	TLS                   TLSCfg            `yaml:"tls"`
 	Multisite             MultisiteCfg      `yaml:"multisite"`
 	SSH                   map[string]SSHCfg `yaml:"ssh,omitempty"`
+	Pull                  PullCfg           `yaml:"pull,omitempty"`
 	LocalPlugins          LocalPluginsCfg   `yaml:"local_plugins,omitempty"`
 	RemoteMedia           RemoteMediaCfg    `yaml:"remote_media,omitempty"`
 	Root                  string            `yaml:"-"`
@@ -273,6 +274,9 @@ func (c *Config) validate() error {
 	base := c.Multisite.BasePath
 	if !strings.HasPrefix(base, "/") || !strings.HasSuffix(base, "/") || !safePathPattern.MatchString(base) || strings.Contains(base, "//") || strings.Contains(base, "..") || path.Clean(base)+"/" != base && base != "/" {
 		return fmt.Errorf("multisite.base_path must be a normalized URL path starting and ending with /, e.g. /")
+	}
+	if err := validatePullConfig(c); err != nil {
+		return err
 	}
 	return validatePluginConfig(c)
 }

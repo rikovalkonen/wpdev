@@ -60,9 +60,12 @@ type remoteMetadata struct {
 	Prefix  string `json:"prefix"`
 	Mode    string `json:"mode"`
 	Uploads string `json:"uploads"`
+	Root    string `json:"root"`
+	Content string `json:"content"`
+	Plugins string `json:"plugins"`
 }
 
-const remoteMetadataPHP = `echo json_encode(['prefix'=>$GLOBALS['wpdb']->base_prefix,'mode'=>is_multisite()?(is_subdomain_install()?'subdomain':'subdirectory'):'','uploads'=>wp_get_upload_dir()['basedir']]);`
+const remoteMetadataPHP = `echo json_encode(['prefix'=>$GLOBALS['wpdb']->base_prefix,'mode'=>is_multisite()?(is_subdomain_install()?'subdomain':'subdirectory'):'','uploads'=>wp_get_upload_dir()['basedir'],'root'=>rtrim(ABSPATH,'/'),'content'=>WP_CONTENT_DIR,'plugins'=>WP_PLUGIN_DIR]);`
 
 func fetchRemote(c *Config, remote SSHCfg, dir string) (string, remoteMetadata, error) {
 	var meta remoteMetadata
@@ -163,15 +166,21 @@ func syncUploads(c *Config, remote SSHCfg, source string, out io.Writer) error {
 	return nil
 }
 
-var pullCmd = &cobra.Command{Use: "pull <environment>", Args: cobra.ExactArgs(1), Short: "Fetch and localize a remote WordPress database"}
+var pullCmd = &cobra.Command{Use: "pull <environment>", Args: cobra.ExactArgs(1), Short: "Fetch WordPress files and localize the remote database"}
 
 func init() {
 	var opts importOptions
-	var uploads, uploadsOnly bool
+	var uploads, uploadsOnly, dbOnly bool
 	addImportFlags(pullCmd, &opts)
+	pullCmd.Flags().Lookup("yes").Usage = "Confirm replacement of local files and database"
+	pullCmd.Flags().Lookup("dry-run").Usage = "Download, validate and preview file/database changes without publishing"
 	pullCmd.Flags().BoolVar(&uploads, "uploads", false, "Also copy uploads with rsync, keeping extra local files")
 	pullCmd.Flags().BoolVar(&uploadsOnly, "uploads-only", false, "Retry/copy uploads without replacing the database")
+	pullCmd.Flags().BoolVar(&dbOnly, "db-only", false, "Skip code transfer and localize the database using existing WordPress files")
+	pullCmd.MarkFlagsMutuallyExclusive("db-only", "uploads-only")
 	pullCmd.RunE = func(cmd *cobra.Command, args []string) error {
+		// Cobra's option storage is reused in tests and embedded callers.
+		opts := opts
 		c, err := projectConfig()
 		if err != nil {
 			return err
@@ -205,6 +214,12 @@ func init() {
 		file, meta, err := fetchRemote(c, remote, dir)
 		if err != nil {
 			return err
+		}
+		if !dbOnly {
+			opts.Files, err = fetchRemoteFiles(c, remote, meta, filepath.Join(dir, "wordpress"), cmd.OutOrStdout())
+			if err != nil {
+				return fmt.Errorf("file download failed; active project unchanged: %w", err)
+			}
 		}
 		if opts.Prefix == "" {
 			opts.Prefix = meta.Prefix

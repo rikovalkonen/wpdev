@@ -10,7 +10,7 @@ mkcert HTTPS, and subdirectory or subdomain multisite networks.
 - Local DNS for your `.test` domains (see below).
 
 Download the macOS Apple Silicon binary and its SHA-256 checksum from
-[release 0.4](https://github.com/rikovalkonen/wpdev/releases/tag/0.4), or build
+[release 0.5](https://github.com/rikovalkonen/wpdev/releases/tag/0.5), or build
 from source on other platforms:
 
 ```sh
@@ -159,24 +159,57 @@ must start and end with `/`. The standard WordPress layout is expected:
 
 ## Importing production into a local project
 
-Prepare the matching WordPress files, plugins, themes and `wp-config.php`
-locally, then use either a dump or a configured SSH environment:
+With a configured SSH environment, `pull` downloads WordPress core, themes,
+plugins, MU plugins and other site files into `web.docroot`, then localizes the
+database. It also works in a newly initialized project with no WordPress files.
+The source's core version is retained. Both `production` and `staging` use this
+same flow:
 
 ```sh
-wpdev db import production.sql.gz --localize --dry-run
-wpdev db import production.sql.gz --localize
-
 wpdev pull production
 wpdev pull production --uploads
 wpdev pull staging --dry-run
 wpdev pull staging
+# Keep existing local code and import only the database:
+wpdev pull production --db-only
 # Retry media without importing the database again:
 wpdev pull production --uploads-only
 
+# SQL imports require WordPress files and wp-config.php already in the project:
+wpdev db import production.sql.gz --localize --dry-run
+wpdev db import production.sql.gz --localize
 # Localize a database already imported into the running db service:
 wpdev db localize
 # Only add conditional local DB settings to wp-config.php:
 wpdev config local
+```
+
+Full pulls download files to a temporary directory. The staged WordPress core
+validates the imported database before any active files change. Existing local
+`wp-config.php` is retained as the basis for localization; in a new project it
+is fetched from the source, including the standard parent-directory location.
+Newly fetched `wp-config.php` is added to the project's `.gitignore`.
+Changed files are listed before the single database/file replacement confirmation
+(`--yes` accepts it), and are backed up with the database. Failed publication
+restores both. Files edited locally while validation runs abort the pull.
+Additional local files are retained; full pulls do not mirror deletions.
+
+Uploads remain optional (`--uploads`) so remote media can be used without copying
+the media library. Git metadata, wpdev/Compose/WP-CLI configuration, `.env` files,
+root SQL dumps/logs, known cache/backup directories and production cache/database drop-ins
+are excluded. Root `.htaccess`, `.user.ini` and `php.ini` stay local; wpdev generates
+the WordPress rewrite rules. Managed local-development plugins are preserved.
+Remote symlinks and collisions with local symlinks stop the pull with a file path
+to review. Custom WordPress content/plugin directory layouts require `--db-only`
+and prepared local files.
+
+Additional exclusions use rsync patterns relative to the remote WordPress root:
+
+```yaml
+pull:
+  exclude:
+    - /wp-content/themes/my-local-theme
+    - /private-backups
 ```
 
 `db import` without `--localize` remains a streaming SQL import, with gzip
@@ -205,7 +238,7 @@ Replace these example connection settings with your own.
 
 SSH uses the host's normal configuration, known hosts and keys/agent, with
 batch authentication. The remote needs WP-CLI and its database dump utility;
-media copying additionally needs rsync on both ends. The remote operations
+file and media copying additionally need rsync on both ends. The remote operations
 read installation metadata and export the installation's prefixed tables.
 Remote credentials are not written to the local YAML.
 
@@ -269,7 +302,8 @@ The first version supports one WordPress network per database and the standard
 WordPress directory layout. Domain-mapping plugins with their own routing
 require manual adjustment. Tables without primary keys, views, stored routines
 and triggers require manual migration. Imports do not convert a subdirectory
-network to subdomains or synchronize WordPress core, plugin or theme code.
+network to subdomains. SQL imports and `pull --db-only` use existing local code;
+normal SSH pulls copy code from the selected environment.
 
 ## Global local-development plugins
 
@@ -465,6 +499,7 @@ WPDEV_DOCKER_TESTS=1 go test ./internal/cli -run TestDockerBuild -v -timeout 60m
 WPDEV_DOCKER_TESTS=1 go test ./internal/cli -run 'TestDockerRuntime|TestDockerMySQL|TestDockerServices' -v -timeout 60m
 WPDEV_DOCKER_TESTS=1 go test ./internal/cli -run 'TestDockerImport|TestDockerConfigLocal' -v -timeout 30m
 WPDEV_DOCKER_TESTS=1 go test ./internal/cli -run TestDockerPlugins -v -timeout 45m
+WPDEV_DOCKER_TESTS=1 go test ./internal/cli -run TestDockerPullFiles -v -timeout 30m
 ```
 
 Docker tests create isolated temporary projects, expose no host ports and remove

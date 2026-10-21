@@ -7,7 +7,7 @@ import (
 	"github.com/spf13/cobra"
 )
 
-const version = "0.4"
+const version = "0.5"
 
 var cfgFile string
 var rootCmd = &cobra.Command{Use: "wpdev", Version: version, Short: "Local WordPress development with Docker", SilenceUsage: true, SilenceErrors: true}

@@ -1,5 +1,26 @@
 # Changelog
 
+## 0.5 — 2026-10-21
+
+- `pull production` and `pull staging` now fetch WordPress core, themes,
+  plugins, MU plugins and site files before localizing the database. New
+  projects can pull without preinstalling WordPress or preparing wp-config.php.
+- `--db-only` retains the previous database-only behavior. Uploads remain
+  optional with `--uploads`; `--uploads-only` still only copies media.
+- File transfers are staged and previewed, with joint database/file backups
+  and rollback, protection against edits during import, and `pull.exclude`
+  patterns for project-specific omissions. Local-only files are retained.
+
+### Upgrading
+
+`pull` now replaces changed WordPress files as well as the database. Use
+`--db-only` to keep local code and import only the database. File transfer
+requires rsync on both machines. Existing local wp-config.php is retained
+as the basis for local settings; uploads remain opt-in.
+
+The release binary targets macOS Apple Silicon (`darwin/arm64`). Other platforms
+can build from source.
+
 ## 0.4 — 2026-10-21
 
 ### Added
