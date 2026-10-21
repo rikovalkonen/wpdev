@@ -20,6 +20,7 @@ func dockerTests(t *testing.T) {
 }
 func dockerConfig(t *testing.T, server, php string) *Config {
 	t.Helper()
+	t.Setenv("XDG_CONFIG_HOME", t.TempDir())
 	root, err := os.MkdirTemp("", "wpdev-it-")
 	if err != nil {
 		t.Fatal(err)

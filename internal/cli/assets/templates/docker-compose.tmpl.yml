@@ -12,13 +12,24 @@ services:
       - ./:/var/www/html:delegated
 {{if .TLS.Enabled}}
       - ./.wpdev/certs/rootCA.pem:/usr/local/share/ca-certificates/wpdev-rootCA.crt:ro
+{{end}}
 {{if .WordPress}}
       - ./.wpdev/generated/wpdev-local.php:/opt/wpdev/wpdev-local.php:ro
-{{end}}{{end}}
+      - ./.wpdev/generated/remote-media.php:/opt/wpdev/remote-media.php:ro
+{{end}}
+{{range .PluginMounts}}
+      - type: bind
+        source: {{quote .Source}}
+        target: {{quote .Target}}
+        read_only: true
+{{end}}
     environment:
       XDEBUG_MODE: {{if .Xdebug.Enabled}}debug,develop{{else}}off{{end}}
       PHP_IDE_CONFIG: serverName=wpdev
       WPDEV_LOCAL: "1"
+{{if .RemoteMediaConfigured}}
+      WP_ENV: development
+{{end}}
       WP_CLI_CONFIG_PATH: /var/www/html/.wpdev/generated/wp-cli.yml
       WPDEV_TLS_FINGERPRINT: {{quote .TLSFingerprint}}
       WPDEV_RUNTIME_FINGERPRINT: {{quote .RuntimeFingerprint}}
@@ -35,6 +46,12 @@ services:
     volumes:
       - ./:/var/www/html:delegated
       - ./.wpdev/generated/nginx.conf:/etc/nginx/conf.d/default.conf:ro
+{{range .PluginMounts}}
+      - type: bind
+        source: {{quote .Source}}
+        target: {{quote .Target}}
+        read_only: true
+{{end}}
     depends_on:
       - php
 {{end}}

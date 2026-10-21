@@ -14,6 +14,7 @@ import (
 
 func testConfig(t *testing.T) *Config {
 	t.Helper()
+	t.Setenv("XDG_CONFIG_HOME", t.TempDir())
 	c := defaultConfig()
 	c.Name = "example"
 	c.Domain = "example.test"

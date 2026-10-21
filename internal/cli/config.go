@@ -31,16 +31,22 @@ type Config struct {
 		Sync     string   `yaml:"sync"`
 		Excludes []string `yaml:"excludes"`
 	} `yaml:"perf"`
-	TLS                TLSCfg            `yaml:"tls"`
-	Multisite          MultisiteCfg      `yaml:"multisite"`
-	SSH                map[string]SSHCfg `yaml:"ssh,omitempty"`
-	Root               string            `yaml:"-"`
-	ConfigPath         string            `yaml:"-"`
-	Aliases            []string          `yaml:"-"`
-	TLSFingerprint     string            `yaml:"-"`
-	RuntimeFingerprint string            `yaml:"-"`
-	WordPress          bool              `yaml:"-"`
-	document           *yaml.Node
+	TLS                   TLSCfg            `yaml:"tls"`
+	Multisite             MultisiteCfg      `yaml:"multisite"`
+	SSH                   map[string]SSHCfg `yaml:"ssh,omitempty"`
+	LocalPlugins          LocalPluginsCfg   `yaml:"local_plugins,omitempty"`
+	RemoteMedia           RemoteMediaCfg    `yaml:"remote_media,omitempty"`
+	Root                  string            `yaml:"-"`
+	ConfigPath            string            `yaml:"-"`
+	Aliases               []string          `yaml:"-"`
+	TLSFingerprint        string            `yaml:"-"`
+	RuntimeFingerprint    string            `yaml:"-"`
+	WordPress             bool              `yaml:"-"`
+	PluginMounts          []pluginMount     `yaml:"-"`
+	PluginFingerprint     string            `yaml:"-"`
+	RemoteMediaJSON       string            `yaml:"-"`
+	RemoteMediaConfigured bool              `yaml:"-"`
+	document              *yaml.Node
 }
 type SSHCfg struct {
 	Host   string `yaml:"host"`
@@ -268,7 +274,7 @@ func (c *Config) validate() error {
 	if !strings.HasPrefix(base, "/") || !strings.HasSuffix(base, "/") || !safePathPattern.MatchString(base) || strings.Contains(base, "//") || strings.Contains(base, "..") || path.Clean(base)+"/" != base && base != "/" {
 		return fmt.Errorf("multisite.base_path must be a normalized URL path starting and ending with /, e.g. /")
 	}
-	return nil
+	return validatePluginConfig(c)
 }
 func (c *Config) file(parts ...string) string {
 	return filepath.Join(append([]string{c.Root}, parts...)...)

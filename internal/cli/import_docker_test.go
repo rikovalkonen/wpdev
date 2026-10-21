@@ -82,6 +82,9 @@ func TestDockerImport(t *testing.T) {
 			seed := `global $wpdb;$value=['url'=>` + phpLiteral(child+`/article`) + `,'mail'=>'person@ope.nuortennyt.fi','json'=>json_encode(['url'=>` + phpLiteral(child+`/image.png`) + `])];update_option('wpdev_import_fixture',$value);$wpdb->query("CREATE TABLE prod_extra (id int PRIMARY KEY, data longtext)");$wpdb->insert('prod_extra',['id'=>1,'data'=>serialize($value)]);$id=wp_insert_post(['post_title'=>'Import post','post_status'=>'publish']);$wpdb->update($wpdb->posts,['guid'=>'http://ope.nuortennyt.fi/unchanged-guid'],['ID'=>$id]);`
 			dockerRun(t, c, wpArgs(c, "eval", seed)...)
 			dockerRun(t, c, wpArgs(c, "eval", `global $wpdb;$wpdb->query("CREATE TABLE third_party_data (value int)");$wpdb->query("INSERT INTO third_party_data VALUES (42)");`)...)
+			if scenario.mode == "single" {
+				dockerRun(t, c, wpArgs(c, "option", "update", "siteurl", "http://ope.nuortennyt.fi/wp")...)
+			}
 			dump, err := dumpDatabase(c)
 			if err != nil {
 				t.Fatal(err)
@@ -192,6 +195,13 @@ func TestDockerImport(t *testing.T) {
 			}
 			if err = localizeDatabase(importTestCommand(), c, dump, opts); err != nil {
 				t.Fatal(err)
+			}
+			media, err := readMediaMap(c)
+			if err != nil || media.Sites[1].Home != "http://ope.nuortennyt.fi" {
+				t.Fatal("original media source was not retained", media, err)
+			}
+			if scenario.mode == "single" && media.Sites[1].Uploads != "http://ope.nuortennyt.fi/wp/wp-content/uploads" {
+				t.Fatal("source core directory lost", media)
 			}
 			expected := c.scheme() + "://masterportaali.test"
 			if scenario.mode == "subdirectory" {

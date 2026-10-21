@@ -3,6 +3,7 @@ package cli
 import (
 	"bytes"
 	"encoding/json"
+	"errors"
 	"fmt"
 	"io"
 	"os"
@@ -212,6 +213,10 @@ func init() {
 			opts.Mode = meta.Mode
 		}
 		if err = localizeDatabase(cmd, c, file, opts); err != nil {
+			var pluginError *postImportPluginError
+			if uploads && errors.As(err, &pluginError) {
+				return fmt.Errorf("%w; uploads were not started: after fixing plugins, retry wpdev pull %s --uploads-only", err, args[0])
+			}
 			return err
 		}
 		if uploads && !opts.DryRun {

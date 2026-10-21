@@ -20,7 +20,7 @@ import (
 
 //go:embed assets/templates/* assets/legacy/* assets/import/*
 var assets embed.FS
-var templateNames = []string{"docker-compose.tmpl.yml", "php.Dockerfile.tmpl", "nginx.conf.tmpl", "Caddyfile.http.tmpl", "Caddyfile.mkcert.tmpl", "entrypoint.sh.tmpl", "wpdev-local.php.tmpl", "wp-cli.yml.tmpl"}
+var templateNames = []string{"docker-compose.tmpl.yml", "php.Dockerfile.tmpl", "nginx.conf.tmpl", "Caddyfile.http.tmpl", "Caddyfile.mkcert.tmpl", "entrypoint.sh.tmpl", "wpdev-local.php.tmpl", "remote-media.php.tmpl", "wp-cli.yml.tmpl"}
 
 type route struct{ Host, Upstream, Certificate string }
 type renderData struct {
@@ -195,6 +195,9 @@ func renderTemplates(c *Config) error {
 	if err := loadAliases(c); err != nil {
 		return err
 	}
+	if err := loadPluginRuntime(c); err != nil {
+		return err
+	}
 	_, err := os.Stat(c.file(c.Web.Docroot, "wp-load.php"))
 	c.WordPress = err == nil
 	s, err := readTemplateState(c)
@@ -206,7 +209,7 @@ func renderTemplates(c *Config) error {
 	}
 	outputs := map[string][]byte{}
 	sources := map[string][]byte{}
-	targets := map[string]string{"php.Dockerfile.tmpl": "php.Dockerfile", "nginx.conf.tmpl": "nginx.conf", "entrypoint.sh.tmpl": "entrypoint.sh", "wpdev-local.php.tmpl": "wpdev-local.php", "wp-cli.yml.tmpl": "wp-cli.yml"}
+	targets := map[string]string{"php.Dockerfile.tmpl": "php.Dockerfile", "nginx.conf.tmpl": "nginx.conf", "entrypoint.sh.tmpl": "entrypoint.sh", "wpdev-local.php.tmpl": "wpdev-local.php", "remote-media.php.tmpl": "remote-media.php", "wp-cli.yml.tmpl": "wp-cli.yml"}
 	caddy := "Caddyfile.http.tmpl"
 	if c.TLS.Enabled {
 		caddy = "Caddyfile.mkcert.tmpl"
@@ -227,6 +230,7 @@ func renderTemplates(c *Config) error {
 		}
 		outputs[target] = b
 	}
+	outputs["plugins-fingerprint"] = []byte(c.PluginFingerprint)
 	// Fingerprints recreate services when bind-mounted generated files or CA change.
 	fingerprint := []byte{}
 	keys := []string{}
@@ -293,7 +297,7 @@ func renderTemplates(c *Config) error {
 		}
 		s.Templates[name] = hash(sources[name])
 	}
-	if c.WordPress && c.TLS.Enabled {
+	if c.WordPress {
 		if err = ensureWordPressLoader(c); err != nil {
 			return err
 		}

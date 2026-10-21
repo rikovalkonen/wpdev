@@ -65,14 +65,20 @@ var startCmd = &cobra.Command{Use: "start", Short: "Render, build changed images
 	if err != nil {
 		return err
 	}
-	return startProject(c, false)
+	if err = startProject(c, false); err != nil {
+		return err
+	}
+	return applyPlugins(c, pluginApplyOptions{}, cmd.OutOrStdout())
 }}
 var rebuildCmd = &cobra.Command{Use: "rebuild", Short: "Render and rebuild the stack", RunE: func(cmd *cobra.Command, args []string) error {
 	c, err := projectConfig()
 	if err != nil {
 		return err
 	}
-	return startProject(c, true)
+	if err = startProject(c, true); err != nil {
+		return err
+	}
+	return applyPlugins(c, pluginApplyOptions{}, cmd.OutOrStdout())
 }}
 var stopCmd = &cobra.Command{Use: "stop", Short: "Stop the stack without deleting database volumes", RunE: func(cmd *cobra.Command, args []string) error {
 	c, err := projectConfig()

@@ -10,7 +10,7 @@ mkcert HTTPS, and subdirectory or subdomain multisite networks.
 - Local DNS for your `.test` domains (see below).
 
 Download the macOS Apple Silicon binary and its SHA-256 checksum from
-[release 0.3](https://github.com/rikovalkonen/wpdev/releases/tag/0.3), or build
+[release 0.4](https://github.com/rikovalkonen/wpdev/releases/tag/0.4), or build
 from source on other platforms:
 
 ```sh
@@ -271,6 +271,96 @@ require manual adjustment. Tables without primary keys, views, stored routines
 and triggers require manual migration. Imports do not convert a subdirectory
 network to subdomains or synchronize WordPress core, plugin or theme code.
 
+## Global local-development plugins
+
+Keep a personal plugin list in `$XDG_CONFIG_HOME/wpdev/config.yml`, or
+`~/.config/wpdev/config.yml` when `XDG_CONFIG_HOME` is unset. An absent file means
+no automatic plugin installs. These commands manage that global list and work
+outside a project:
+
+```sh
+wpdev plugins add dude-load-media-from-remote \
+  --source https://github.com/digitoimistodude/dude-load-media-from-remote/archive/refs/heads/main.zip \
+  --integration remote-media
+wpdev plugins add query-monitor
+wpdev plugins list
+wpdev plugins remove query-monitor
+```
+
+The equivalent configuration is:
+
+```yaml
+plugins:
+  dude-load-media-from-remote:
+    source: https://github.com/digitoimistodude/dude-load-media-from-remote/archive/refs/heads/main.zip
+    integration: remote-media
+  query-monitor:
+    source: query-monitor
+```
+
+`start`, `rebuild` and successful localized imports (`pull`, `db import
+--localize`, `db localize`) install missing entries and activate them. Multisite
+activation covers the entire network, including future subsites. WordPress
+must already be installed; otherwise wpdev defers plugins until the next start.
+Existing versions, including GitHub branch ZIPs, are never updated implicitly.
+
+```sh
+wpdev plugins apply --dry-run
+wpdev plugins apply
+wpdev plugins update                  # explicitly update managed entries
+wpdev plugins update query-monitor
+```
+
+In `.wpdev.yml`, opt out for a whole project or selected entries:
+
+```yaml
+local_plugins:
+  enabled: true                       # false disables the inherited list
+  disabled:
+    - query-monitor
+remote_media:
+  enabled: true                       # false disables the remote-media adapter
+  # Optional source-home overrides; normally inferred from the imported DB:
+  # url: https://production.example
+  # sites:
+  #   7: https://customer.example
+```
+
+Downloaded plugins live in ignored `.wpdev/plugins/` directories and are mounted
+read-only into the usual plugin paths in PHP and Nginx. Their assets therefore
+work normally without adding plugin source files to your project checkout.
+Use `wpdev plugins update` to update these copies, rather than the WordPress
+dashboard. A project-owned plugin with the same ID is reused and can be activated,
+but its files, updates and later deactivation remain under your control.
+Removing or disabling a global entry deactivates only wpdev-managed copies on the
+next apply/start; cached packages remain available.
+
+Plugin changes have their own database/file backups under `.wpdev/backups/plugins-*`
+and `.wpdev/db`, and a failed operation restores its starting state. A plugin
+failure after import reports that the database import succeeded; rerun
+`wpdev plugins apply` after fixing the issue. The global list accepts WordPress.org
+slugs and public HTTPS ZIP URLs; private package authentication is not supported.
+
+### Dude remote-media integration
+
+With `integration: remote-media`, `pull staging` uses staging's original media
+addresses and `pull production` uses production's. SQL localization also retains
+the source URLs. The import records each site's original home, core URL and uploads
+base before URL replacement in ignored `.wpdev/remote-media.json`. Re-localizing
+an already local database retains its original source map.
+
+The local MU helper supplies `WP_ENV=development`, the current site's local
+`WP_HOME` environment value and its `REMOTE_MEDIA_URL`. It handles multisite
+context switches and corrects the uploads prefix through Dude's filter, including
+separate core directories, mapped domains and `uploads/sites/<id>/` paths.
+Existing local media stays local. No global `WP_HOME` PHP constant is added.
+
+The adapter works in Apache, Nginx and WP-CLI, with HTTP or HTTPS, and is guarded
+by `WPDEV_LOCAL=1`. Remove old local `.htaccess` `SetEnv WP_ENV`,
+`SetEnv REMOTE_MEDIA_URL` and `SetEnv WP_HOME` directives: wpdev reports these
+conflicts instead of overwriting user rules. Without imported source metadata or
+an explicit `remote_media.url`/`sites` override, image URLs remain local.
+
 ## HTTPS and internal requests
 
 `tls.enabled: true` enables the whole local trust chain:
@@ -374,6 +464,7 @@ go vet ./...
 WPDEV_DOCKER_TESTS=1 go test ./internal/cli -run TestDockerBuild -v -timeout 60m
 WPDEV_DOCKER_TESTS=1 go test ./internal/cli -run 'TestDockerRuntime|TestDockerMySQL|TestDockerServices' -v -timeout 60m
 WPDEV_DOCKER_TESTS=1 go test ./internal/cli -run 'TestDockerImport|TestDockerConfigLocal' -v -timeout 30m
+WPDEV_DOCKER_TESTS=1 go test ./internal/cli -run TestDockerPlugins -v -timeout 45m
 ```
 
 Docker tests create isolated temporary projects, expose no host ports and remove

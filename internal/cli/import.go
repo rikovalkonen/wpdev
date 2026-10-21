@@ -84,6 +84,14 @@ func localizeDatabase(cmd *cobra.Command, c *Config, file string, opts importOpt
 	if err != nil {
 		return err
 	}
+	media, err := stage.sourceMedia(source, meta)
+	if err != nil {
+		return err
+	}
+	plan.Media, err = planMediaMap(c, plan, media)
+	if err != nil {
+		return err
+	}
 	fmt.Fprintln(cmd.OutOrStdout(), "Local URL changes:")
 	for i, site := range plan.Source.Sites {
 		fmt.Fprintf(cmd.OutOrStdout(), "  site %d: %s -> %s\n", site.ID, site.Home, plan.Target.Sites[i].Home)
@@ -93,6 +101,9 @@ func localizeDatabase(cmd *cobra.Command, c *Config, file string, opts importOpt
 		return fmt.Errorf("staged localization failed; active project unchanged: %w", err)
 	}
 	if opts.DryRun {
+		if err = previewPlugins(&plan.Config, cmd.OutOrStdout()); err != nil {
+			return err
+		}
 		fmt.Fprintln(cmd.OutOrStdout(), "Preview passed. Active database and project files unchanged.")
 		return nil
 	}
@@ -127,8 +138,18 @@ func localizeDatabase(cmd *cobra.Command, c *Config, file string, opts importOpt
 		return err
 	}
 	fmt.Fprintln(cmd.OutOrStdout(), "Database localized successfully:", plan.Config.URL())
+	if err = applyPlugins(c, pluginApplyOptions{}, cmd.OutOrStdout()); err != nil {
+		return &postImportPluginError{err}
+	}
 	return nil
 }
+
+type postImportPluginError struct{ err error }
+
+func (e *postImportPluginError) Error() string {
+	return "database was localized successfully, but local plugins failed; retry with wpdev plugins apply: " + e.err.Error()
+}
+func (e *postImportPluginError) Unwrap() error { return e.err }
 
 type snapshotEntry struct {
 	Path string `json:"path"`
@@ -142,11 +163,15 @@ type importSnapshot struct {
 }
 
 func snapshotImport(c *Config) (*importSnapshot, error) {
-	s := &importSnapshot{root: c.Root, dir: c.file(".wpdev", "backups", "import-"+time.Now().UTC().Format("20060102T150405.000000000"))}
+	return snapshotManaged(c, "import")
+}
+func snapshotManaged(c *Config, label string, extraPaths ...string) (*importSnapshot, error) {
+	s := &importSnapshot{root: c.Root, dir: c.file(".wpdev", "backups", label+"-"+time.Now().UTC().Format("20060102T150405.000000000"))}
 	s.paths = []string{filepath.Base(c.ConfigPath), "docker-compose.yml", ".gitignore",
 		filepath.Join(c.Web.Docroot, "wp-config.php"), filepath.Join(c.Web.Docroot, ".htaccess"),
 		filepath.Join(c.Web.Docroot, "wp-content", "mu-plugins", "wpdev-local.php"),
-		".wpdev/generated", ".wpdev/templates", ".wpdev/certs", ".wpdev/sites.json", ".wpdev/template-state.json"}
+		".wpdev/generated", ".wpdev/templates", ".wpdev/certs", ".wpdev/sites.json", ".wpdev/template-state.json", ".wpdev/remote-media.json", ".wpdev/plugins-state.json"}
+	s.paths = append(s.paths, extraPaths...)
 	if err := os.MkdirAll(s.dir, 0o700); err != nil {
 		return nil, err
 	}
@@ -352,6 +377,9 @@ func publishImport(c *Config, p *importPlan, dump string, config []byte, mode os
 		return err
 	}
 	if err = saveConfig(target.ConfigPath, target); err != nil {
+		return err
+	}
+	if err = writeMediaMap(target, p.Media); err != nil {
 		return err
 	}
 	if target.Web.Server == "apache" {

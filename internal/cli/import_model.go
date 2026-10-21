@@ -41,6 +41,7 @@ type importPlan struct {
 	Target       importMetadata
 	Config       Config
 	Replacements []urlReplacement
+	Media        mediaMap
 }
 
 var sqlIdentifier = regexp.MustCompile(`^[a-zA-Z0-9_]+$`)

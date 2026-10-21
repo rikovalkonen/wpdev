@@ -1,8 +1,9 @@
 <?php
-/** Plugin Name: wpdev local HTTPS trust (container only) */
+/** Plugin Name: wpdev local integrations (container only) */
 if (!defined('ABSPATH') || getenv('WPDEV_LOCAL') !== '1') {
     return;
 }
+require __DIR__ . '/remote-media.php';
 add_filter('http_request_args', static function ($args, $url) {
     $host = strtolower((string) parse_url($url, PHP_URL_HOST));
     $local_hosts = [{{range .Aliases}}{{phpquote .}},{{end}}];

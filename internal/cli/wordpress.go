@@ -422,7 +422,7 @@ func ensureWordPressLoader(c *Config) error {
 		return err
 	}
 	if err == nil && string(b) != wordpressLoader {
-		return fmt.Errorf("%s contains user code; rename it before enabling wpdev's local HTTPS integration", p)
+		return fmt.Errorf("%s contains user code; rename it before enabling wpdev's local integrations", p)
 	}
 	if err = atomicWrite(p, []byte(wordpressLoader), 0o644); err != nil {
 		return err

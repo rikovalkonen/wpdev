@@ -7,7 +7,7 @@ import (
 	"github.com/spf13/cobra"
 )
 
-const version = "0.3"
+const version = "0.4"
 
 var cfgFile string
 var rootCmd = &cobra.Command{Use: "wpdev", Version: version, Short: "Local WordPress development with Docker", SilenceUsage: true, SilenceErrors: true}
@@ -20,5 +20,5 @@ func Execute() {
 }
 func init() {
 	rootCmd.PersistentFlags().StringVar(&cfgFile, "config", "", "config file (default .wpdev.yml; paths are relative to its directory)")
-	rootCmd.AddCommand(initCmd, startCmd, stopCmd, rebuildCmd, xdebugCmd, dbCmd, tlsCmd, templatesCmd, wpCmd, multisiteCmd, siteCmd, doctorCmd, localConfigCmd, pullCmd)
+	rootCmd.AddCommand(initCmd, startCmd, stopCmd, rebuildCmd, xdebugCmd, dbCmd, tlsCmd, templatesCmd, wpCmd, multisiteCmd, siteCmd, doctorCmd, localConfigCmd, pullCmd, pluginsCmd)
 }

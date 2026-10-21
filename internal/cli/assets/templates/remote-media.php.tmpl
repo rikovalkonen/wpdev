@@ -1,0 +1,68 @@
+<?php
+/** Local remote-media adapter; loaded before regular plugins, also without TLS. */
+if (!defined('ABSPATH') || getenv('WPDEV_LOCAL') !== '1') { return; }
+global $wpdev_media;
+$wpdev_media = json_decode({{phpquote .RemoteMediaJSON}}, true);
+if (empty($wpdev_media['configured'])) { return; }
+if (empty($wpdev_media['active'])) { putenv('REMOTE_MEDIA_URL'); return; }
+
+// Replace URL prefixes only at a path boundary, never arbitrary domain text.
+function wpdev_media_replace_prefix($url, $from, $to) {
+    $from = rtrim($from, '/'); $to = rtrim($to, '/');
+    if ($from === '' || !str_starts_with($url, $from)) { return $url; }
+    $rest = substr($url, strlen($from));
+    if ($rest !== '' && !in_array($rest[0], ['/', '?', '#'], true)) { return $url; }
+    return $to . $rest;
+}
+function wpdev_media_origin($url) {
+    $p = parse_url($url);
+    return ($p['scheme'] ?? '') . '://' . ($p['host'] ?? '') . (isset($p['port']) ? ':' . $p['port'] : '');
+}
+function wpdev_media_rebase($url, $from, $to) {
+    $next = wpdev_media_replace_prefix($url, $from, $to);
+    return $next !== $url ? $next : wpdev_media_replace_prefix($url, wpdev_media_origin($from), wpdev_media_origin($to));
+}
+function wpdev_media_context() {
+    global $wpdev_media;
+    $id = get_current_blog_id();
+    $local = rtrim(home_url(), '/');
+    $uploads = wp_get_upload_dir()['baseurl'];
+    $source = $wpdev_media['map']['sites'][$id] ?? null;
+    $override = $wpdev_media['overrides']['sites'][$id] ?? '';
+    if ($override === '' && $id === ($wpdev_media['map']['main_id'] ?? 1)) {
+        $override = $wpdev_media['overrides']['url'] ?? '';
+    }
+    if (!$source && $override === '') { return null; }
+    $remote = rtrim($source['home'] ?? $local, '/');
+    $remote_uploads = $source['uploads'] ?? $uploads;
+    if ($override !== '') {
+        $remote_uploads = wpdev_media_rebase($remote_uploads, $remote, rtrim($override, '/'));
+        $remote = rtrim($override, '/');
+    }
+    // A fresh/local-only import has no external media to fall back to.
+    if ($remote === $local && $remote_uploads === $uploads) { return null; }
+    return ['local'=>$local, 'uploads'=>rtrim($uploads,'/'), 'remote'=>$remote, 'remote_uploads'=>rtrim($remote_uploads,'/')];
+}
+function wpdev_media_environment() {
+    $context = wpdev_media_context();
+    putenv('WP_ENV=development');
+    putenv('WP_HOME=' . rtrim(home_url(), '/'));
+    // Keep Dude's filters registered even when the initial site has no source;
+    // the final adapter leaves that site's URLs local and supports switch_to_blog.
+    putenv('REMOTE_MEDIA_URL=' . ($context['remote'] ?? rtrim(home_url(), '/')));
+}
+wpdev_media_environment();
+add_action('switch_blog', 'wpdev_media_environment', 0);
+add_action('admin_enqueue_scripts', static function () {
+    if (!wpdev_media_context()) {
+        remove_action('admin_enqueue_scripts', 'Dude_Load_Media_From_Remote\\highlight_remote_media');
+    }
+}, 0);
+add_filter('dude_remote_media_url', static function ($candidate) {
+    $context = wpdev_media_context();
+    if (!$context) { return $candidate; }
+    // Dude has already replaced local home with remote home. Its resulting
+    // upload prefix can differ from the real source (e.g. /wp or /sites/2).
+    $intermediate = str_replace($context['local'], $context['remote'], $context['uploads']);
+    return wpdev_media_replace_prefix($candidate, $intermediate, $context['remote_uploads']);
+}, PHP_INT_MAX);

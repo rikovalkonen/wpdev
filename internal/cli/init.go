@@ -141,9 +141,18 @@ func projectIgnore(c *Config) error {
 		return err
 	}
 	marker := "# wpdev local artifacts"
-	if strings.Contains(string(b), marker) {
+	old := string(b)
+	if !strings.Contains(old, marker) {
+		b = append(b, []byte("\n"+marker+"\n")...)
+	}
+	lines := []string{"/.wpdev/certs/", "/.wpdev/backups/", "/.wpdev/db/", "/.wpdev/generated/", "/.wpdev/template-state.json", "/.wpdev/sites.json", "/.wpdev-compose-*.yml", "/docker-compose.yml", "/.wpdev/plugins/", "/.wpdev/plugins-state.json", "/.wpdev/remote-media.json", "/.wpdev/.plugin-stage-*/", "/.wpdev/import.lock/"}
+	for _, line := range lines {
+		if !strings.Contains("\n"+string(b)+"\n", "\n"+line+"\n") {
+			b = append(b, []byte("\n"+line+"\n")...)
+		}
+	}
+	if string(b) == old {
 		return nil
 	}
-	text := "\n" + marker + "\n/.wpdev/certs/\n/.wpdev/backups/\n/.wpdev/db/\n/.wpdev/generated/\n/.wpdev/template-state.json\n/.wpdev/sites.json\n/.wpdev-compose-*.yml\n/docker-compose.yml\n"
-	return atomicWrite(p, append(b, []byte(text)...), 0o644)
+	return atomicWrite(p, b, 0o644)
 }

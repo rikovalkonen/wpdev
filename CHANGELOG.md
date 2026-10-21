@@ -1,5 +1,32 @@
 # Changelog
 
+## 0.4 — 2026-10-21
+
+### Added
+
+- Global local-development plugin lists with automatic installation after
+  localization and on start/rebuild, network activation and explicit updates.
+- Ignored plugin storage with PHP/Nginx mounts, preservation of project-owned
+  copies, and separate database/file rollback for plugin operations.
+- Dude remote-media integration for Apache, Nginx and WP-CLI, including
+  per-site source uploads maps, multisite switching and local source overrides.
+
+### Upgrading
+
+Plugin automation is opt-in through the user's global plugin list. Add entries
+with `wpdev plugins add`, then run `wpdev plugins apply` in an existing project.
+Successful localized imports and subsequent start/rebuild commands apply the
+list automatically; installed versions only change with `wpdev plugins update`.
+
+Review custom Compose and MU-helper templates with `wpdev templates update`
+and merge the generated `.new` versions after `wpdev templates update --apply`.
+The new helper and plugin mounts are required for local plugin automation.
+For Dude's integration, remove legacy local `SetEnv WP_ENV`,
+`SetEnv REMOTE_MEDIA_URL` and `SetEnv WP_HOME` directives when wpdev reports them.
+
+The release binary targets macOS Apple Silicon (`darwin/arm64`). Other platforms
+can build from source.
+
 ## 0.3 — 2026-10-21
 
 ### Added
