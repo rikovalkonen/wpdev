@@ -346,3 +346,61 @@ func TestDockerServices(t *testing.T) {
 		dockerRun(t, c, "exec", "-T", "php", "curl", "-fsS", "-L", "--retry", "5", "--retry-delay", "1", "--max-time", "20", "-o", "/dev/null", "https://"+host)
 	}
 }
+
+func TestDockerStaleImageDetection(t *testing.T) {
+	dockerTests(t)
+	c := dockerConfig(t, "apache", "8.5")
+	if err := os.MkdirAll(c.file(c.Web.Docroot), 0o755); err != nil {
+		t.Fatal(err)
+	}
+	if err := renderTemplates(c); err != nil {
+		t.Fatal(err)
+	}
+	dockerRun(t, c, "build", "php")
+	if phpImageStale(c) {
+		t.Fatal("a freshly built image must match the current configuration")
+	}
+	// Apache bakes the document root into the image.
+	c.Web.Docroot = "public"
+	if err := os.MkdirAll(c.file(c.Web.Docroot), 0o755); err != nil {
+		t.Fatal(err)
+	}
+	if err := renderTemplates(c); err != nil {
+		t.Fatal(err)
+	}
+	if !phpImageStale(c) {
+		t.Fatal("changed image inputs must be reported until rebuild")
+	}
+	dockerRun(t, c, "build", "php")
+	if phpImageStale(c) {
+		t.Fatal("rebuild must clear the stale state")
+	}
+}
+
+// Docker leaves a container without networks when publishing its port fails;
+// the next up would start it unreachable.
+func TestDockerRecreatesDetachedContainer(t *testing.T) {
+	dockerTests(t)
+	project := func(name string) *Config {
+		c := &Config{Root: t.TempDir()}
+		model := "name: " + name + "\nservices:\n  caddy:\n    image: caddy:2\n    ports: [\"18999:80\"]\n"
+		if err := os.WriteFile(c.file("docker-compose.yml"), []byte(model), 0o644); err != nil {
+			t.Fatal(err)
+		}
+		t.Cleanup(func() { exec.Command("docker", composeArgs(c, "down", "--remove-orphans")...).Run() })
+		return c
+	}
+	holder, c := project("wpdev-test-holder"), project("wpdev-test-detached")
+	dockerRun(t, holder, "up", "-d")
+	if err := exec.Command("docker", composeArgs(c, "up", "-d")...).Run(); err == nil {
+		t.Fatal("expected the occupied port to fail the start")
+	}
+	dockerRun(t, holder, "down")
+	removeDetachedContainers(c)
+	dockerRun(t, c, "up", "-d", "--wait")
+	id := strings.TrimSpace(dockerRun(t, c, "ps", "-q", "caddy"))
+	out, err := exec.Command("docker", "inspect", "--format", "{{len .NetworkSettings.Networks}}", id).Output()
+	if err != nil || strings.TrimSpace(string(out)) != "1" {
+		t.Fatal("container must be attached to the project network", string(out), err)
+	}
+}

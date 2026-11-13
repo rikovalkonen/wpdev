@@ -61,12 +61,15 @@ func newImportStage(c *Config, config []byte, sourceRoot ...string) (*importStag
 	for name, data := range map[string][]byte{
 		"Dockerfile": dockerfile, ".wpdev/generated/entrypoint.sh": bundled("entrypoint.sh.tmpl"),
 		"wp-config.php": config, "inspect.php": importAsset("inspect.php"), "patch.php": importAsset("patch.php"),
+		"cli.php": importAsset("cli.php"),
 	} {
 		if err := atomicWrite(filepath.Join(dir, name), data, 0o600); err != nil {
 			return nil, err
 		}
 	}
-	if err = os.MkdirAll(filepath.Join(dir, "content"), 0o755); err != nil {
+	// WordPress must be able to register its theme root even though staging
+	// deliberately does not load the project's themes or plugins.
+	if err = os.MkdirAll(filepath.Join(dir, "content", "themes"), 0o755); err != nil {
 		return nil, err
 	}
 	image := "wpdev-import-php:" + c.Web.PHP + "-" + hash(dockerfile)[:12]
@@ -187,7 +190,7 @@ func (s *importStage) inspect(opts importOptions, hint string) (importMetadata, 
 }
 func (s *importStage) wp(out io.Writer, args ...string) error {
 	a := []string{"exec", "-T", "-e", "WPDEV_DB_NAME=" + s.meta.Schema, "php", "php", "-d", "error_reporting=E_ALL & ~E_DEPRECATED", "/usr/local/bin/wp",
-		"--allow-root", "--path=" + s.config.containerDocroot(), "--skip-plugins", "--skip-themes", "--skip-packages", "--no-color"}
+		"--allow-root", "--path=" + s.config.containerDocroot(), "--require=/wpdev-import/cli.php", "--skip-plugins", "--skip-themes", "--skip-packages", "--no-color"}
 	return s.run(nil, out, append(a, args...)...)
 }
 func (s *importStage) localize(p *importPlan, source []byte) ([]byte, error) {
@@ -231,7 +234,7 @@ func (s *importStage) localize(p *importPlan, source []byte) ([]byte, error) {
 		}
 	}
 	for pass := 0; pass < 2; pass++ {
-		for _, r := range replacements {
+		for i, r := range replacements {
 			old, next := r.old, r.placeholder
 			if pass == 1 {
 				old, next = r.placeholder, r.target
@@ -239,6 +242,7 @@ func (s *importStage) localize(p *importPlan, source []byte) ([]byte, error) {
 			// Require a URL boundary after the host/path. Escaped JSON strings
 			// use a backslash before their slash/quote delimiters.
 			pattern := regexp.QuoteMeta(old) + `(?=$|[/\\?#\s"'<>])`
+			fmt.Fprintf(os.Stdout, "Localizing URLs: pass %d/2, mapping %d/%d\n", pass+1, i+1, len(replacements))
 			if err = s.wp(os.Stdout, urlArg, "search-replace", pattern, next, "--regex", "--precise", "--all-tables-with-prefix", "--skip-columns=guid", "--report-changed-only"); err != nil {
 				return nil, err
 			}

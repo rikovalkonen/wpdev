@@ -6,6 +6,8 @@ services:
       dockerfile: .wpdev/generated/php.Dockerfile
       args:
         PHP_VERSION: {{quote .Web.PHP}}
+      labels:
+        wpdev.build: {{quote .BuildFingerprint}}
     extra_hosts:
       - "host.docker.internal:host-gateway"
     volumes:

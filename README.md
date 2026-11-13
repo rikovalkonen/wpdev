@@ -479,6 +479,7 @@ Existing database directories and volume identities are not migrated or deleted.
 
 ```sh
 wpdev stop                        # down; preserves database volumes
+wpdev start                       # render/up; builds images only when missing
 wpdev rebuild                     # render/build/up; remove obsolete services
 wpdev xdebug on                    # debug,develop; trigger-based, IDE port 9003
 wpdev xdebug off

@@ -242,6 +242,9 @@ func renderTemplates(c *Config) error {
 		fingerprint = append(fingerprint, outputs[k]...)
 	}
 	c.RuntimeFingerprint = hash(fingerprint)
+	// Everything baked into the PHP image. start compares this with the label
+	// on the existing image instead of rebuilding.
+	c.BuildFingerprint = hash(bytes.Join([][]byte{outputs["php.Dockerfile"], outputs["entrypoint.sh"], []byte(c.Web.PHP)}, []byte{0}))
 	d = dataFor(c)
 	comp, err := executeTemplate("docker-compose.tmpl.yml", sources["docker-compose.tmpl.yml"], d)
 	if err != nil {

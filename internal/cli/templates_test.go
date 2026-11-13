@@ -248,3 +248,44 @@ func TestExplicitLegacyUpdateKeepsComposeOwnership(t *testing.T) {
 		t.Fatal("explicit upgrade lost generated Compose ownership", err)
 	}
 }
+
+func TestBuildFingerprintTracksImageInputs(t *testing.T) {
+	fakeProcesses(t, func(cmd *exec.Cmd) error { return nil })
+	c := testConfig(t)
+	if err := renderTemplates(c); err != nil {
+		t.Fatal(err)
+	}
+	first := c.BuildFingerprint
+	b, _ := os.ReadFile(c.file("docker-compose.yml"))
+	if first == "" || !strings.Contains(string(b), `wpdev.build: "`+first+`"`) {
+		t.Fatal("compose must label the PHP image with the build fingerprint", first)
+	}
+	// Runtime-only settings must not ask for a rebuild.
+	c.Xdebug.Enabled = !c.Xdebug.Enabled
+	if err := renderTemplates(c); err != nil {
+		t.Fatal(err)
+	}
+	if c.BuildFingerprint != first {
+		t.Fatal("xdebug mode is an environment setting, not an image input")
+	}
+	if c.Web.PHP == "8.4" {
+		c.Web.PHP = "8.5"
+	} else {
+		c.Web.PHP = "8.4"
+	}
+	if err := renderTemplates(c); err != nil {
+		t.Fatal(err)
+	}
+	if c.BuildFingerprint == first {
+		t.Fatal("PHP version change must change the build fingerprint")
+	}
+}
+
+func TestStartDoesNotBuild(t *testing.T) {
+	if s := strings.Join(upArgs(false), " "); strings.Contains(s, "--build") {
+		t.Fatal("start must reuse images", s)
+	}
+	if s := strings.Join(upArgs(true), " "); !strings.Contains(s, "--build") || !strings.Contains(s, "--remove-orphans") {
+		t.Fatal("rebuild must build and remove orphans", s)
+	}
+}

@@ -1,5 +1,23 @@
 # Changelog
 
+## Unreleased
+
+- `start` and `rebuild` recreate containers that Docker left without a network
+  after a failed start, typically when ports 80/443 or the database port were
+  held by another project. Previously the next start brought the container up
+  unreachable, and the site refused connections until it was recreated by hand.
+- `start` no longer rebuilds images on every run; it builds only when an image
+  is missing. Run `wpdev rebuild` after changing the PHP version or the
+  Dockerfile template. Rollback restarts also reuse the existing images.
+- `start` warns when the existing PHP image was built from a different
+  Dockerfile, entrypoint or PHP version than the current configuration. The
+  image carries a `wpdev.build` label for this; images built by earlier
+  versions trigger the warning once, until the next `wpdev rebuild`.
+- Keep PHP 8.5 deprecation noise out of the isolated import's WP-CLI commands
+  after WordPress resets error reporting. Other diagnostics remain visible.
+- Create the isolated theme root so imports do not trigger WordPress's
+  theme-registration notice, and show progress during URL replacement passes.
+
 ## 0.5 — 2026-10-21
 
 - `pull production` and `pull staging` now fetch WordPress core, themes,

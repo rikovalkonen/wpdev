@@ -42,6 +42,7 @@ type Config struct {
 	Aliases               []string          `yaml:"-"`
 	TLSFingerprint        string            `yaml:"-"`
 	RuntimeFingerprint    string            `yaml:"-"`
+	BuildFingerprint      string            `yaml:"-"`
 	WordPress             bool              `yaml:"-"`
 	PluginMounts          []pluginMount     `yaml:"-"`
 	PluginFingerprint     string            `yaml:"-"`

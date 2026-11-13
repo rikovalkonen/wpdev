@@ -262,7 +262,7 @@ func applyPlugins(c *Config, o pluginApplyOptions, out io.Writer) (err error) {
 			failures = append(failures, "file restore: "+e.Error())
 		}
 		if len(failures) == 0 {
-			if e := compose(c, nil, out, "up", "-d", "--build", "--wait", "--wait-timeout", "180"); e != nil {
+			if e := compose(c, nil, out, "up", "-d", "--wait", "--wait-timeout", "180"); e != nil {
 				failures = append(failures, "restart: "+e.Error())
 			}
 		}

@@ -343,7 +343,7 @@ func publishImport(c *Config, p *importPlan, dump string, config []byte, mode os
 		if e := snapshot.restore(); e != nil {
 			failures = append(failures, "file restore: "+e.Error())
 		} else if len(failures) == 0 && hadCompose && len(running) > 0 {
-			if e = compose(c, nil, os.Stdout, append([]string{"up", "-d", "--build", "--wait", "--wait-timeout", "180"}, running...)...); e != nil {
+			if e = compose(c, nil, os.Stdout, append([]string{"up", "-d", "--wait", "--wait-timeout", "180"}, running...)...); e != nil {
 				failures = append(failures, "restart: "+e.Error())
 			}
 		}
